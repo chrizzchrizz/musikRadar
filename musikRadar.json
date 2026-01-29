@@ -1,0 +1,1702 @@
+{
+  "name": "Neue Musik",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Du bist ein Musikfan, der aber wenig Zeit hat und aus einer Vielzahl von Rezensionen spannend neue Musik entdecken möchte. Lesen den Text und bearbeite folgende Aufgaben:\n\n**Aufgabe**\n1. Schreibe eine Zusammenfassung von maximal 1000 Zeichen. Der Text soll sich leicht lesen lassen und einen Eindruck vermitteln, ob es sich lohnt das Album zu hören. Die Spache für die Zusammenfassung it deutsch!\n2. Finde heraus, um welche Musikrichtung es sich handelt.\n\nAntworte IMMER in folgendem Format:\n\nMusikrichtung\nZusammenfassung\n\nMusikrichtung, Zusammenfassung sind Überschriften. \nFüge jeweils ## davor: ##Zusammenfassung\n##Musikrichtung\n\nHier der Text, den du bearbeiten sollst: {{ $('Extract Text').item.json.content }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        416,
+        592
+      ],
+      "id": "67a04e76-7a21-4bf0-b81f-064119e5c4d0",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        784
+      ],
+      "id": "a24ee77e-d170-4c4f-bf2a-271c4bc17dba",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "7eVx2YGthwyaMbEM",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if (!$json.results.albums) { return { error: \"Nicht bei Apple Music verfügbar\" }};\n\nconst album = $json.results.albums.data[0];\n\nreturn {\n  album: album.attributes.name,\n  artist: album.attributes.artistName,\n  appleMusicLink: album.attributes.url,\n  albumId: album.id,\n  coverUrl: album.attributes.artwork.url\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        528
+      ],
+      "id": "2d2a5e55-a614-4f33-9ea4-631478fe90ee",
+      "name": "Apple Music Link"
+    },
+    {
+      "parameters": {
+        "url": "https://api.music.apple.com/v1/catalog/de/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "term",
+              "value": "={{ \n  $('Extract Text').item.json.title \n    ? $('Extract Text').item.json.title\n        .replace(/[^\\p{L}]/gu, ' ')\n        .replace(/\\s+/g, ' ')\n        .trim()\n    : ''\n}}\n"
+            },
+            {
+              "name": "types",
+              "value": "albums"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 2000
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -208,
+        528
+      ],
+      "id": "b39786a1-661c-4c07-a04a-a960893c9cff",
+      "name": "Request Album Details",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "qbgMLKlwn6idZqDL",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title",
+              "cssSelector": ".pane-node-title h1, #subnavigation h1, .ratitle, .asmb-article-title, .asmb-article-subtitle"
+            },
+            {
+              "key": "content",
+              "cssSelector": ".field-item.even p, .artikel p, .racontent, .asmb-article-copy-text",
+              "returnArray": true
+            },
+            {
+              "key": "subtitle",
+              "cssSelector": ".asmb-article-subtitle"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -1136,
+        608
+      ],
+      "id": "ba45519a-414d-465d-9ecc-dc191bcfdcf5",
+      "name": "Extract Text",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1664,
+        608
+      ],
+      "id": "1db00f10-ec74-4e57-80ee-e2c0dc362a9b",
+      "name": "Request Review"
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiContentItems = $input.all();\nconst completeContentItems = $(\"Merge content & apple link\").all(); \n\nfor (let i = 0; i < aiContentItems.length; i++) {\n  const item = aiContentItems[i];\n  const source = completeContentItems[i]; // greift auf das i-te Item im \"If\" Node zu\n\n  if (!source) continue; // falls weniger Items im \"If\"-Node vorhanden sind, überspringen\n\n  item.json.album = source.json.album;\n  item.json.artist = source.json.artist;\n  item.json.content = item.json.output;\n  item.json.appleMusicLink = source.json.appleMusicLink || ''\n  item.json.link = source.json.link\n  item.json.coverUrl = source.json.coverUrl\n  item.json.rating = source.json.rating\n  item.json.lastmod = source.json.lastmod\n\n  delete item.json.output;\n}\n\nreturn aiContentItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        592
+      ],
+      "id": "f93d2512-50e9-4fe8-9b0f-9561a6122e6f",
+      "name": "Combine"
+    },
+    {
+      "parameters": {
+        "fromEmail": "chrizz@tripmii.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "=MusikRadar",
+        "html": "=<html>\n<head>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@100..900&family=Source+Sans+3:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap\" rel=\"stylesheet\">\n\n<style>\n  body {\n    font-family: \"Source Sans 3\", sans-serif;\n    font-optical-sizing: auto;\n    font-weight: 400;\n    font-size: 1.0em;\n    font-style: normal;\n    padding-left: 10px;\n    background-color: #fff0f0;\n  }\n\n  .container {\n    margin: 0 auto;\n    max-width: 500px;\n    background-color: #dadde6;\n    padding: 2px 20px;\n    border-radius: 8px;\n  }\n\n  article {\n    padding-bottom: 3em;\n    color: #223a58;\n  }\n\n  .subline {\n\tmargin-bottom: 3em;\n\tfont-family: \"Source Sans 3\", sans-serif;\n\tfont-weight: 500;\n\tcolor: #223a58;\n  }\n\n  h1 {\n    font-family: \"Roboto Slab\", serif;\n    font-optical-sizing: auto;\n    font-weight: 600;\n    font-style: normal;\n    font-size: 2.0em;\n    color: #223a58;\n    margin-bottom: 0;\n  }\n\n  h2 {\n    font-family: \"Roboto Slab\", serif;\n    font-optical-sizing: auto;\n    font-weight: 600;\n    font-style: normal;\n    font-size: 1.3em;\n    color: #223a58;\n    margin-bottom: 1em;\n  }\n\n  h3 {\n    font-family: \"Source Sans 3\", sans-serif;\n    font-optical-sizing: auto;\n    font-weight: 500;\n    font-size: 1.1em;\n    font-style: normal;\n    margin-bottom: 0.2em;\n    color: #223a58;\n  }\n\n  a {\n    color: #D97D6D;\n  }\n\n  img {\n    border-radius: 12px;\n  }\n\n  .clashlogo {\n    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQcAAAA8CAYAAABrYX99AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA7VpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYxIDY0LjE0MDk0OSwgMjAxMC8xMi8wNy0xMDo1NzowMSAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wUmlnaHRzPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvcmlnaHRzLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcFJpZ2h0czpNYXJrZWQ9IkZhbHNlIiB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6MzcxNDdBMDQyNjIwNjgxMTkxMDlBOEFGN0VCNzNCRDEiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6QjMxMTg0M0VEMzExMTFFMUI5NUNEQ0EyMTZBQ0VGMjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6QjMxMTg0M0REMzExMTFFMUI5NUNEQ0EyMTZBQ0VGMjEiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENTNSBNYWNpbnRvc2giPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo0OEFBQkEwMjBEMjA2ODExOTEwOTk3OTBDRDBFQTA2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);\n    background-size: 76px auto;\n    background-position: 8px;\n    background-repeat: no-repeat;\n    display: inline-block;\n    height: 30px;\n    width: 94;\n    background-color: #ffffff;\n    border-radius: 8px;\n  }\n\n  .applemusic {\n    background-image: url(data:image/png;base64,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);\n    background-size: 30px auto;\n    background-repeat: no-repeat;\n    display: inline-block;\n    height: 30px;\n    width: 40px;\n  }\n\n  .lautlogo {\n    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUkAAABgCAMAAACngHDQAAAAbFBMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8+T+BWAAAAI3RSTlMAs0PsRxLi9Ex0W/x5LJHI0txsm70MY4kWBuekJFQ8NB1/rBkxGaQAAAn1SURBVHja7Z1nY9owEIblDV7y3njg//8fG1yDbJ0WaZNC4/djYsnSo9PdaQBIUd0pKVsti+IoyrS2PF+CGh16UnU/ac0MZGSlmaNDqsovrTFz5WiFhQ4paEiNWSLvqqNDEul4VlLsokMCnaJZWUaCDnEU4PkpxSY6xFAdzk9Lq9AhWn0zf0Le4S5pTfMndT2y9a3ybP607A4duquzeVk4voZl8qEpbDODN8Mv6NBv9Q57LXPurV1ICoqU7UzP6NBNJxaczLXYmXvLwj6hQwhdWGEkQFxZk3OgZEmHWPCOYz1+KN+xTA+UUIMHAkiB7qpOpRYZzoeMOAvdjpSKAcqE6zz8ZKvziF5O3V9oYgdCSNTdMRYZTRn7D5gtQGkitugE6wWXmO68l46eFwYe8r4Gbz32+nBYHziDWM/JK7UfQRI4vHC1x1aw1u7Yr5/xDyZZ0DDK9e8kOhv4mqZp2GYNSB9NMAw/lmRHpzPp3gd62XnIN3n59f58lrMHwvyHJAsn3sg29O8jCfuYLX+1otUaSxDC8mSN2U2AbvLpaPXPSMK2XL6NJCxvW1uQZc4eeuN3eAmYEXz6VyRhBDx9H8ncBuUJSNxxi103KOuIykWDn0iypIr7m36X5LGqP7nFqR/p98aLBfd0EvUDSY5UuMEbvC5apYfR+pgXp6f6vsJZ/qYxd4iHT5HMLcuq6u8lmVdV/gxJ60NKJtnfExvSCJdaEzZ+fl8ZkWQoEhqlnGRXhFncGB+yIy0sOmq8g52W/1bBXvknSPYhvr0zSk0FkvXgtzg2PhTjNqFtpXIYCVAebaJeH89Axmqtwa2017G2koJnSNYFBvl9Ue8KexvNjbVE6d3fZl1AUn6IGhcSkl1JBZR4sqjJAJd6E/GXaBIe25jE/jKQniuTvDQzQ43JLWxUC0nQ79SI6Krs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);\n  background-size: 70px auto;\n  background-position: 8px;\n  background-repeat: no-repeat;\n  display: inline-block;\n  height: 30px;\n  width: 90px;\n  background-color: #625c48;\n  border-radius: 8px;\n}\n\n.ralogo {\n\tbackground-image: url(data:image/png;base64,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);\n\tbackground-size: 38px auto;\n\tbackground-position: 8px;\n\tbackground-repeat: no-repeat;\n\tdisplay: inline-block;\n\theight: 30px;\n\twidth: 53px;\n\tbackground-color: #000000;\n\tborder-radius: 8px;\n}\n\n.musikexpresslogo {\n  background-image: url(data:image/png;base64,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);\n  background-size: 38px auto;\n  background-position: 8px;\n  background-repeat: no-repeat;\n  display: inline-block;\n  height: 30px;\n  width: 53px;\n  background-color: #ffffff;\n  border-radius: 8px;\n}\n</style>\n\n</head>\n<body>\n<div class=\"container\">\n<h1>MusikRadar</h1>\n<div class=\"subline\">Die wichtigsten Kritiken auf einen Blick</div>\n{{ $('Email Content').item.json.emailBody }}\n</div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -1344,
+        -816
+      ],
+      "id": "e0a65c20-2074-4500-98bf-5c9da77c1a6d",
+      "name": "Send email",
+      "webhookId": "e857a212-8cf3-4f89-a5ac-78a15aeb9046",
+      "credentials": {
+        "smtp": {
+          "id": "HLBkOKgyxOecaSWP",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst emailText = items.map(item => {\n  const { artist, album, content, appleMusicLink, link, coverUrl, rating } = item.json;\n  let contentHtml = content.replace(/^##(.*)$/gm, '<h3>$1</h3>');\n  contentHtml = contentHtml.replaceAll('\\n', '<br>');\n  contentHtml = contentHtml.replaceAll('</h3><br>', '</h3>');\n  let largeCoverUrl = coverUrl.replaceAll('{w}x{h}', '400x400');\n\nlet magazin = \"\";\n\nif (link.includes(\"clashmusic\")) {\n  magazin = `<a href=\"${link}\" class=\"clashlogo\" alt=\"Clash Music\"></a>`;\n} else if (link.includes(\"ra.co\")) {\n  magazin = `<a href=\"${link}\" class=\"ralogo\" alt=\"Resident Advisor\"></a>`;\n} else if (link.includes(\"musikexpress\")) {\n  magazin = `<a href=\"${link}\" class=\"musikexpresslogo\" alt=\"MusikExpress\"></a>`;\n} else {\n  magazin = `<a href=\"${link}\" class=\"lautlogo\" alt=\"Laut Musikmagazin\"></a>`;\n}\n  \n  return (\n    `<article><h2>${artist} – ${album}</h2>` +\n    `<img src=\"${largeCoverUrl}\" width=\"200\" height=\"auto\" />` +\n    `${contentHtml}` + \n    `<h3>${rating}</h3><br>` + \n    `<a href=\"${appleMusicLink}\" class=\"applemusic\"></a>` +\n    `${magazin}` + \n    `</article>`\n  );\n}).join(\"\");\n\nreturn [{\n  json: {\n    emailBody: emailText\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        -816
+      ],
+      "id": "b892bf32-59d1-4064-8eec-1574fe3b2b57",
+      "name": "Email Content"
+    },
+    {
+      "parameters": {
+        "url": "https://www.clashmusic.com/post-sitemap101.xml",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2176,
+        -560
+      ],
+      "id": "818ab56f-b424-4371-bf95-bde2e3fd3e01",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "options": {
+          "explicitArray": false
+        }
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        -560
+      ],
+      "id": "6c9e6540-c137-46a6-8416-9ebd614e0cba",
+      "name": "XML"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "google/gemma-3-4b",
+          "mode": "list",
+          "cachedResultName": "google/gemma-3-4b"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        944
+      ],
+      "id": "5e487be2-7f54-4fb5-b34f-2f70fb454c07",
+      "name": "LM Studio",
+      "credentials": {
+        "openAiApi": {
+          "id": "7eVx2YGthwyaMbEM",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const urls = $input.first().json.urlset.url\n  // filter zuerst nach /reviews/\n  .filter(entry => entry.loc.includes('/reviews/'))\n  // nimm sowohl loc als auch lastmod ins neue Objekt auf\n  .map(entry => ({\n    link: entry.loc,\n    lastmod: entry.lastmod\n  }));\n\n// Return the array direkt (1 Item pro Eintrag)\nreturn urls.map(obj => ({ json: obj }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        -560
+      ],
+      "id": "27cf1029-92ff-4adc-87bc-ca8e0d96404c",
+      "name": "Filter Links & Reviews"
+    },
+    {
+      "parameters": {
+        "jsCode": "var list = $('Keep only new reviews').all();\nvar ratings = $('Ratings').all()\n\nreturn $input.all().map((item, index) => {\n  const title = item.json.title;\n  const contentArray = item.json.content || [];\n  const rating = ratings[index].json.rating;\n\n  const contentString = contentArray.join('\\n\\n');\n  const link = list[index]?.json?.link || null;\n  const lastmod = list[index]?.json?.lastmod || null;\n\n  return {\n    json: {\n      title,\n      link: link,\n      lastmod: lastmod,\n      content: contentString,\n      rating: rating\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        720
+      ],
+      "id": "40f21dc4-da50-4dcf-a915-485ea6ed13ab",
+      "name": "Combine Values"
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "lastmod",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        -128
+      ],
+      "id": "5055880f-1894-4135-8c52-838d4e7eac95",
+      "name": "Sort"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b7db41ac-7763-425b-b04d-60381e575b5f",
+              "name": "link",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "1885445b-33da-43e0-816f-2bac551c1507",
+              "name": "lastmod",
+              "value": "={{ $json.isoDate }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1360,
+        -336
+      ],
+      "id": "6f8a4580-4120-4a49-b779-595c990eab3a",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "url": "https://laut.de/_feeds/alben/rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -2176,
+        -336
+      ],
+      "id": "587b3587-a186-4965-bfc2-f4ac082d9b26",
+      "name": "RSS Read Laut.de"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $json.data;\nvar meter = \"\";\n\n// Clash\nconst regexClash = /<p>\\s*<strong>\\s*((?:10|[1-9])\\/10)\\s*<\\/strong>\\s*<\\/p>/is;\nvar match = data.match(regexClash);\nvar rating = String(match ? match[1] : \"-\")\n\n// Laut\nif (match == null) {\n  const regexLaut = /<meta\\s+(?:[^>]*?\\s)?itemprop=[\"']rating[\"'][^>]*?\\scontent=[\"']([^\"']+)[\"']/i;\n  match = data.match(regexLaut);\n  rating = String(match ? (Number(match[1]) * 2) + \"/10\" : \"-\") \n}\n\n// MusikExpress\nif (match == null) {\n  const regexMusikExpress = /class=[\"']asmb-rating[^\"']*[\"'][^>]*style=[\"'][^\"']*width:\\s*([\\d.]+)%/i;\n  match = data.match(regexMusikExpress);\n  rating = String(match ? (Math.round(parseFloat(match[1])/100 * 10)) + \"/10\" : \"-\")\n}\n\nreturn {\n  data: data,\n  rating: String(rating)\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        608
+      ],
+      "id": "865570cc-b655-45af-942e-dd16f67de880",
+      "name": "Ratings"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Eingabe: z. B. über vorherigen HTTP Request Node\n// const html = $json[\"html\"]; // wenn HTML aus vorherigem Node kommt\nconst html = $json.data;\n\n// 1. Alle <script type=\"application/ld+json\"> Blöcke finden\nconst scriptRegex = /<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi;\nconst matches = [...html.matchAll(scriptRegex)];\n\n// Wenn keine Treffer gefunden → gib einfach den HTML-Inhalt zurück\nif (matches.length === 0) {\n  return {\n    \"data\": html\n  };\n}\n\nlet reviewData = null;\n\n// 2. Jeden gefundenen Block prüfen, ob er \"@type\": \"Review\" enthält\nfor (const match of matches) {\n  const scriptContent = match[1].trim();\n\n  try {\n    const json = JSON.parse(scriptContent);\n\n    // Manche Seiten haben ein Array oder verschachtelte Strukturen\n    const data = Array.isArray(json) ? json : [json];\n\n    for (const obj of data) {\n      if (obj['@type'] === 'Review') {\n        reviewData = obj;\n        break;\n      }\n    }\n\n    if (reviewData) break;\n  } catch (e) {\n    // Falls JSON fehlerhaft formatiert ist, einfach überspringen\n    continue;\n  }\n}\n\n// 3. Werte extrahieren\nlet name = null;\nlet abstract = null;\nlet reviewBody = null;\n\nif (reviewData) {\n  name = reviewData.name || null;\n  abstract = reviewData.abstract || null;\n  reviewBody = reviewData.reviewBody || null;\n} else {\n  return {\"data\": html}\n}\n\n// 4. Rückgabe\nreturn {\"data\": `<html><body><h2 class=\"ratitle\">${name}</h2><article class=\"racontent\"><p>${abstract}</p><p>${reviewBody}</p></article></body></html>` };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1488,
+        608
+      ],
+      "id": "4861a2e5-584b-478a-836f-cfac1e16c25a",
+      "name": "RA Advisor Special"
+    },
+    {
+      "parameters": {
+        "content": "## Clash",
+        "height": 208,
+        "width": 1024,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2240,
+        -608
+      ],
+      "typeVersion": 1,
+      "id": "914af40b-2d94-4763-bb89-1c36e4b58404",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## RA",
+        "height": 224,
+        "width": 2640,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -3856,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "32ce3792-2d2d-495e-a51f-1ca074ea8999",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Laut",
+        "height": 176,
+        "width": 1024,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2240,
+        -384
+      ],
+      "typeVersion": 1,
+      "id": "b3a64326-164a-4e8a-8189-e5fc0284ea48",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => {\n  const link = i.json.link.replace(/'/g, \"''\");\n  const lastmod = i.json.lastmod.replace(/'/g, \"''\");\n  return `SELECT '${link}' AS link, '${lastmod}' AS lastmod`;\n});\n\nconst unions = rows.join('\\nUNION ALL\\n');\n\nconst query = `\nSELECT tmp.link, tmp.lastmod\nFROM (\n  ${unions}\n) AS tmp\nWHERE NOT EXISTS (SELECT 1 FROM review_reviews AS a\n  WHERE a.link = tmp.link);\n`;\n\nreturn [{ json: { query } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        608
+      ],
+      "id": "b93fa591-5c8f-4b12-b7d6-0cb4b48a6bdd",
+      "name": "Build SQL Query"
+    },
+    {
+      "parameters": {
+        "table": {
+          "__rl": true,
+          "value": "review_reviews",
+          "mode": "list",
+          "cachedResultName": "review_reviews"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        896,
+        592
+      ],
+      "id": "d26dd64b-2e6b-46a6-aac5-393a2e02f9e1",
+      "name": "Save reviews in table",
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Send Email",
+        "height": 272,
+        "width": 1312,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2240,
+        -896
+      ],
+      "typeVersion": 1,
+      "id": "b4fd0e7f-3bff-4b4a-9533-27cf00bfaa01",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "maxItems": 10
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        608
+      ],
+      "id": "b0d988a8-9824-48de-a5b6-406e66c26733",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        176,
+        592
+      ],
+      "id": "e458ab79-ae52-4197-ad06-0c6382c8e7ae",
+      "name": "Merge content & apple link"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6cab0690-94d4-4fb9-8a69-02d845d826af",
+              "leftValue": "={{ $json.lastmod }}",
+              "rightValue": "2025-06-01T00:00:00",
+              "operator": {
+                "type": "dateTime",
+                "operation": "after"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -848,
+        -288
+      ],
+      "id": "36955805-2708-404e-8cab-e17ad98984a0",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "333f447c-ff54-49d9-b4a5-f2ed651b4bd7",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -736,
+        608
+      ],
+      "id": "939f5e1e-aab4-431a-9887-723c1a49bee1",
+      "name": "title needed"
+    },
+    {
+      "parameters": {
+        "table": {
+          "__rl": true,
+          "value": "review_reviews",
+          "mode": "list",
+          "cachedResultName": "review_reviews"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "link",
+              "value": "={{ $('Limit').item.json.link }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -704,
+        864
+      ],
+      "id": "77c83f1b-43d8-4f5b-b8c7-6840ffdc3bb3",
+      "name": "Save Link and dont retry",
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "review_receipients",
+          "mode": "list",
+          "cachedResultName": "review_receipients"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -1552,
+        -816
+      ],
+      "id": "6891722b-7420-4c4f-acc3-226378e00503",
+      "name": "Get Receipients",
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "review_lastsend",
+          "mode": "list",
+          "cachedResultName": "review_lastsend"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -2192,
+        -816
+      ],
+      "id": "8dc79f2a-615a-430b-a3ce-c589c2619832",
+      "name": "Last send",
+      "executeOnce": true,
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM review_reviews\nWHERE lastmod > '{{ $json.date }}' AND appleMusicLink != ''\nORDER BY id DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -1968,
+        -816
+      ],
+      "id": "dac5d30a-7d22-41e4-a2a7-d64d0d466645",
+      "name": "Execute a SQL query",
+      "executeOnce": true,
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM review_lastsend;\nINSERT INTO review_lastsend (date)\nVALUES (NOW());",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -1136,
+        -816
+      ],
+      "id": "eb48ce37-432e-4748-a56b-c004fbc9c46d",
+      "name": "Update Last Send",
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4112,
+        -336
+      ],
+      "id": "bc013790-2d60-4ed8-8360-562c6f57d8e3",
+      "name": "Get Data Trigger"
+    },
+    {
+      "parameters": {
+        "content": "## Collect, Create & Save Data",
+        "height": 640,
+        "width": 3408,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2256,
+        448
+      ],
+      "typeVersion": 1,
+      "id": "d44279b8-7c25-4802-b89e-34a5340eca4c",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## Handle Data",
+        "height": 416,
+        "width": 768
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1200,
+        -384
+      ],
+      "typeVersion": 1,
+      "id": "14c431a0-e9c4-44aa-a842-9a3efde81bb1",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 16
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2448,
+        -816
+      ],
+      "id": "572ddb9a-f166-4e9e-ab49-053315a2b03f",
+      "name": "Send Mail Trigger"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "sitemapindex.sitemap",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -3408,
+        -128
+      ],
+      "id": "6453bec7-322d-4972-8588-58782a683792",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "urlset.url",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -2032,
+        -112
+      ],
+      "id": "c50c3b36-3901-4ed8-86dc-fda877838532",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0d5830ce-498c-449a-8f88-e402eb50e83e",
+              "leftValue": "={{ $json.loc }}",
+              "rightValue": "/reviews/",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1808,
+        -112
+      ],
+      "id": "ada74da9-820c-40f6-bb20-548a022b5cfd",
+      "name": "Filter1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2704,
+        -128
+      ],
+      "id": "8a96d6cf-56e7-4fd3-9b43-95670be43155",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "925c6065-fba8-451a-9b38-016e61ff1f62",
+              "leftValue": "={{ $json }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1600,
+        -112
+      ],
+      "id": "6ae201b8-b245-4229-95e6-6b8183ceccac",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "maxItems": 25,
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -3168,
+        -128
+      ],
+      "id": "f63fcd81-ae57-414c-b4d2-30ef1484e311",
+      "name": "Limit - From End"
+    },
+    {
+      "parameters": {
+        "maxItems": 10
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2944,
+        -128
+      ],
+      "id": "0b210a5d-3a0d-40ff-8799-0daa558bffff",
+      "name": "Limit - From Start"
+    },
+    {
+      "parameters": {
+        "jsCode": "const urls = $input.all()\n  .map(i => i.json)\n  // 1️⃣ Nur URLs, die \"/reviews/\" enthalten\n  .filter(entry => entry.loc?.includes('/reviews/'))\n  // 2️⃣ lastmod innerhalb der letzten 60 Tage\n  .filter(entry => {\n    const lastmodDate = new Date(entry.lastmod);\n    const cutoff = new Date();\n    cutoff.setDate(cutoff.getDate() - 60);\n    return lastmodDate >= cutoff;\n  })\n  // 3️⃣ Felder mappen\n  .map(entry => ({\n    link: entry.loc,\n    lastmod: entry.lastmod + \"T00:47:11.000Z\"\n  }));\n\nreturn urls.map(obj => ({ json: obj }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        -128
+      ],
+      "id": "1385039b-1970-46e0-be73-39bd88b6c69d",
+      "name": "Get Link & lastmod1"
+    },
+    {
+      "parameters": {
+        "url": "https://ra.co/sitemap.xml",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"User-Agent\": \"Mozilla/5.0\",\n  \"Accept\": \"application/xml\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -3792,
+        -128
+      ],
+      "id": "d00c400c-ffa0-461e-a5ee-d4154e103227",
+      "name": "Get overview sitemap"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        -3584,
+        -128
+      ],
+      "id": "72f4dfc0-b2d8-4ecd-a5cd-5fe2cc0c1f76",
+      "name": "XML 2 Json"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.loc }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"User-Agent\": \"Mozilla/5.0\",\n  \"Accept\": \"application/xml\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2464,
+        -112
+      ],
+      "id": "b751770d-587b-42ad-b4df-b8e14fbd6b25",
+      "name": "Get detail sitemap"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        -2256,
+        -112
+      ],
+      "id": "4d7a2012-918d-41d5-8648-5a17bef509e8",
+      "name": "Detail XML 2 json"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        272
+      ],
+      "id": "a15ac874-e28c-486d-88f3-1a765798d350",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "content": "## MusikExpress",
+        "height": 224,
+        "width": 1056,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2272,
+        96
+      ],
+      "typeVersion": 1,
+      "id": "dae5c7b9-661d-4aba-a541-d64a191524ed",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "options": {
+          "explicitArray": false
+        }
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        144
+      ],
+      "id": "b20b610e-a775-4a08-90ef-7edac0c3e64a",
+      "name": "XML1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const urls = $input.first().json.urlset.url\n  // filter zuerst nach /reviews/\n  .filter(entry => entry.loc.includes('/reviews/'))\n  // nimm sowohl loc als auch lastmod ins neue Objekt auf\n  .map(entry => ({\n    link: entry.loc,\n    lastmod: entry.lastmod\n  }));\n\n// Return the array direkt (1 Item pro Eintrag)\nreturn urls.map(obj => ({ json: obj }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        144
+      ],
+      "id": "4b0050e9-6577-484a-85e5-ffd53f68636d",
+      "name": "Filter Links & Reviews1"
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1072,
+        -320
+      ],
+      "id": "ba8df542-0f4b-4153-a5ad-0dd217632514",
+      "name": "Merge Channels"
+    },
+    {
+      "parameters": {
+        "url": "https://www.musikexpress.de/reviews-sitemap42.xml",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2208,
+        144
+      ],
+      "id": "1cab3ebf-456f-4859-8270-166aa0e16e17",
+      "name": "HTTP Request MusikExpress"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json[\"query\"]}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -2048,
+        608
+      ],
+      "id": "f80f61b8-0306-4f17-838a-03a9cac812ea",
+      "name": "Keep only new reviews",
+      "credentials": {
+        "mySql": {
+          "id": "jcCAls9JuR0oOCaF",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6e24b934-9bad-473f-81a0-6b97c2655b95",
+              "name": "title",
+              "value": "={{ $json.title }} {{ $json.subtitle }}",
+              "type": "string"
+            },
+            {
+              "id": "349ad5a0-70a1-4c6e-b621-e7e5f7567569",
+              "name": "content",
+              "value": "={{ $json.content }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -944,
+        608
+      ],
+      "id": "68b03c23-14ee-4d65-addd-7327848b8987",
+      "name": "Combine Title & Subtitle"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Combine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Album Details": {
+      "main": [
+        [
+          {
+            "node": "Apple Music Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apple Music Link": {
+      "main": [
+        [
+          {
+            "node": "Merge content & apple link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Combine Title & Subtitle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Review": {
+      "main": [
+        [
+          {
+            "node": "RA Advisor Special",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine": {
+      "main": [
+        [
+          {
+            "node": "Save reviews in table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Content": {
+      "main": [
+        [
+          {
+            "node": "Get Receipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML": {
+      "main": [
+        [
+          {
+            "node": "Filter Links & Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LM Studio": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Filter Links & Reviews": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Values": {
+      "main": [
+        [
+          {
+            "node": "Merge content & apple link",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Sort": {
+      "main": [
+        [
+          {
+            "node": "Build SQL Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read Laut.de": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Ratings": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RA Advisor Special": {
+      "main": [
+        [
+          {
+            "node": "Ratings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL Query": {
+      "main": [
+        [
+          {
+            "node": "Keep only new reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save reviews in table": {
+      "main": [
+        []
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Request Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge content & apple link": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Sort",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "title needed": {
+      "main": [
+        [
+          {
+            "node": "Combine Values",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Request Album Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Link and dont retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Receipients": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last send": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
+      "main": [
+        [
+          {
+            "node": "Update Last Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Data Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read Laut.de",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request MusikExpress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Mail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Last send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Limit - From End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get detail sitemap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Get Link & lastmod1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit - From End": {
+      "main": [
+        [
+          {
+            "node": "Limit - From Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit - From Start": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Link & lastmod1": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get overview sitemap": {
+      "main": [
+        [
+          {
+            "node": "XML 2 Json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML 2 Json": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get detail sitemap": {
+      "main": [
+        [
+          {
+            "node": "Detail XML 2 json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detail XML 2 json": {
+      "main": [
+        [
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        []
+      ]
+    },
+    "XML1": {
+      "main": [
+        [
+          {
+            "node": "Filter Links & Reviews1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Channels": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Links & Reviews1": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "HTTP Request MusikExpress": {
+      "main": [
+        [
+          {
+            "node": "XML1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep only new reviews": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Title & Subtitle": {
+      "main": [
+        [
+          {
+            "node": "title needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d31196e1-4453-4698-93f0-c5d2c8195e73",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "69dbcc3ef04de7700ef813cfec9ac8bb42b31daa848790f78ada4106188cffe2"
+  },
+  "id": "TQlGiQ43qZanL8rG",
+  "tags": []
+}
