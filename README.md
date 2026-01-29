@@ -9,9 +9,10 @@ Der **Musik Radar** Workflow sammelt automatisch neue Album-Rezensionen von vers
 ## Funktionen
 
 ### Datenquellen
-- **Laut.de** - RSS-Feed für deutsche Musikrezensionen
-- **Resident Advisor** - Spezielle Rezensionen und Advisor-Picks
-- **MusikExpress** - HTTP-basierte Rezensionsabfrage
+- **Laut.de**
+- **Resident Advisor**
+- **Clash**
+- **MusikExpress**
 
 ### Kernfunktionalität
 1. **Automatische Rezensionssammlung** - Abruf neuer Rezensionen über RSS und Sitemaps
@@ -33,7 +34,7 @@ Der Workflow benötigt folgende Zugangsdaten:
 4. **SMTP Account** - Für E-Mail-Versand
 
 ### Datenbank-Schema
-Die MySQL-Datenbank sollte mindestens folgende Tabellen enthalten:
+Die Datenbank sollte mindestens folgende Tabellen enthalten:
 - Reviews-Tabelle (title, content, link, lastmod, etc.)
 - Recipients-Tabelle (E-Mail-Adressen)
 - Last-Send-Tabelle (Tracking des letzten Versandzeitpunkts)
@@ -105,9 +106,6 @@ Die Workflow-Trigger führen den Prozess automatisch aus:
 2. Automatische Verarbeitung und Speicherung
 3. Zeitgesteuerter E-Mail-Versand an Empfänger
 
-### Manuelle Ausführung
-Klicke auf "When clicking 'Execute workflow'" für einen manuellen Testlauf.
-
 ## Fehlerbehandlung
 
 Der Workflow enthält mehrere Sicherheitsmechanismen:
@@ -138,7 +136,7 @@ E-Mails enthalten:
 Bitte beachte die Nutzungsbedingungen der verwendeten APIs:
 - OpenAI API Terms of Service
 - Apple Music API Guidelines
-- Copyright der Quellseiten (Laut.de, Resident Advisor, MusikExpress)
+- Copyright der Quellseiten (Laut.de, Resident Advisor, Clash, MusikExpress)
 
 ## Support
 
